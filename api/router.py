@@ -217,28 +217,28 @@ async def get_tasks(agent_id: str = None):
 
 
 @router.post("/bsm")
-async def bsm(src: List[str] = Query(None), rate: float = 10, duration: float = 120):
+async def bsm(src: List[str] = Query(None), rate: float = 10, duration: float = 120, owner: str = None):
     return await _rpc_request(
-        client.bsmExperiment(nodes=src, rate=rate, duration=duration),
+        client.bsmExperiment(nodes=src, rate=rate, duration=duration, owner=owner),
         operation="BSM experiment",
         context=f"src={src}"
     )
 
 
 @router.post("/spg")
-async def spg(src: List[str] = Query(None), rate: float = 10, duration: float = 120):
+async def spg(src: List[str] = Query(None), rate: float = 10, duration: float = 120, owner: str = None):
     return await _rpc_request(
-        client.singlePhotonGeneration(nodes=src, rate=rate, duration=duration),
+        client.singlePhotonGeneration(nodes=src, rate=rate, duration=duration, owner=owner),
         operation="Single photon generation",
         context=f"src={src}"
     )
 
 
 @router.post("/egp")
-async def egp(src: str, dst: str, pairs: int, bellState: str, fidelity: float):
+async def egp(src: str, dst: str, pairs: int, bellState: str, fidelity: float, owner: str = None):
     return await _rpc_request(
         client.entanglementGeneration(src=src, dst=dst, pairs=pairs,
-                                      bellState=bellState, fidelity=fidelity),
+                                       bellState=bellState, fidelity=fidelity, owner=owner),
         operation="Entanglement generation",
         context=f"src={src} dst={dst}"
     )

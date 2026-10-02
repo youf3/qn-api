@@ -245,23 +245,27 @@ class QuantNetClient(object):
         }
         return await self._call("simulate", payload)
 
-    async def bsmExperiment(self, nodes, rate, duration):
+    async def bsmExperiment(self, nodes, rate, duration, owner=None):
         payload = {
             "nodes": nodes,
             "rate": rate,
             "duration": duration
         }
+        if owner:
+            payload["owner"] = owner
         return await self._call("bsmRequest", payload)
 
-    async def singlePhotonGeneration(self, nodes, rate, duration):
+    async def singlePhotonGeneration(self, nodes, rate, duration, owner=None):
         payload = {
             "nodes": nodes,
             "rate": rate,
             "duration": duration
         }
+        if owner:
+            payload["owner"] = owner
         return await self._call("spgRequest", payload)
 
-    async def entanglementGeneration(self, src, dst, pairs, bellState, fidelity):
+    async def entanglementGeneration(self, src, dst, pairs, bellState, fidelity, owner=None):
         payload = {
             "source": src,
             "destination": dst,
@@ -269,6 +273,8 @@ class QuantNetClient(object):
             "bellState": bellState,
             "fidelity": fidelity
         }
+        if owner:
+            payload["owner"] = owner
         return await self._call("egpRequest", payload)
 
 

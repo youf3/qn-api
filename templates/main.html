@@ -59,6 +59,7 @@
         </div>
     </div>
 
+    {% if role == "admin" %}
     <!-- Calibrations Panel -->
     <div class="row g-4 mt-3">
         <div class="col-12">
@@ -89,6 +90,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <div class="row g-4 mt-3">
         <div class="col-12">
@@ -137,6 +139,7 @@
     </div>
 </div>
 
+{% if role == "admin" %}
 <!-- Polarization Chart Modal -->
 <div class="modal fade" id="polChartModal" tabindex="-1" aria-labelledby="polChartModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -154,6 +157,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- Agent Info Modal -->
 <div class="modal fade" id="AgentDetailsModal" tabindex="-1" aria-labelledby="AgentDetailsModalLabel" aria-hidden="true">
@@ -308,6 +312,7 @@
   </div>
   
 
+{% if role == "admin" %}
 <!-- Calibration Details Modal -->
 <div class="modal fade" id="CalibrationDetailsModal" tabindex="-1" aria-labelledby="CalibrationDetailsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -325,6 +330,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- Agent Ping Modal -->
 <div class="modal fade" id="AgentPingModal" tabindex="-1" aria-labelledby="AgentPingModalLabel" aria-hidden="true">
@@ -366,6 +372,7 @@
 </div>
 
 
+{% if role == "admin" %}
 <!-- Calibration Modal -->
 <div class="modal fade" id="CalibrationModal" tabindex="-1" aria-labelledby="CalibrationModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -415,6 +422,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 <!-- Single Photon Generation Modal -->
 <div class="modal fade" id="spgModal" tabindex="-1" aria-labelledby="spgModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -506,7 +514,7 @@
 </div>
 
 <script>
-    const app = new App({{ data | tojson }});
+    const app = new App({{ data | tojson }}, "{{ role }}");
 </script>
 
 {% endblock %}

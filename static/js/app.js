@@ -45,11 +45,12 @@ export class App {
      * @param {string} data.ws_host - MQTT WebSocket host
      * @param {number} data.ws_port - MQTT WebSocket port
      */
-    constructor(data) {
+    constructor(data, role = 'admin') {
         // Expose on window so inline onclick handlers can reach components
         window.app = this;
 
-        console.log('View data:', data);
+        this.role = role;
+        console.log('View data:', data, 'Role:', role);
 
         // ── Instantiate core services ────────────────────────────────────
         this.eventBus = new EventBus();

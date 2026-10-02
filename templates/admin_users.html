@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}
+<title>QUANT-NET — User Management</title>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header text-start">Users</div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Created</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-header text-start">Add User</div>
+                <div class="card-body">
+                    <div id="add-user-alert"></div>
+                    <form id="addUserForm">
+                        <div class="mb-3">
+                            <label for="newUsername" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="newUsername" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="newEmail" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="newEmail" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="newPassword" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="newRole" class="form-label">Role</label>
+                            <select class="form-select" id="newRole">
+                                <option value="user" selected>User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Create User</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function loadUsers() {
+        const tbody = document.getElementById('users-table-body');
+        try {
+            const resp = await fetch('/api/users');
+            const users = await resp.json();
+            tbody.innerHTML = '';
+            users.forEach(u => {
+                const created = u.created_at
+                    ? new Date(u.created_at * 1000).toLocaleDateString()
+                    : '—';
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${u.username}</td>
+                    <td>${u.email}</td>
+                    <td><span class="badge bg-${u.role === 'admin' ? 'primary' : 'secondary'}">${u.role}</span></td>
+                    <td>${created}</td>
+                    <td class="text-center">
+                        <button class="btn btn-outline-danger btn-sm" onclick="deleteUser('${u.username}')">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </td>`;
+                tbody.appendChild(row);
+            });
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Failed to load users</td></tr>';
+        }
+    }
+
+    async function deleteUser(username) {
+        if (!confirm(`Delete user "${username}"?`)) return;
+        try {
+            const resp = await fetch(`/api/users/${username}`, { method: 'DELETE' });
+            if (resp.ok) {
+                loadUsers();
+            } else {
+                const body = await resp.json();
+                alert(body.detail || 'Failed to delete user');
+            }
+        } catch (e) {
+            alert('Failed to delete user');
+        }
+    }
+
+    document.getElementById('addUserForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const alertDiv = document.getElementById('add-user-alert');
+        const body = {
+            username: document.getElementById('newUsername').value,
+            email: document.getElementById('newEmail').value,
+            password: document.getElementById('newPassword').value,
+            role: document.getElementById('newRole').value,
+        };
+        try {
+            const resp = await fetch('/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (resp.ok) {
+                alertDiv.innerHTML = '<div class="alert alert-success py-1">User created</div>';
+                document.getElementById('addUserForm').reset();
+                loadUsers();
+            } else {
+                const data = await resp.json();
+                alertDiv.innerHTML = `<div class="alert alert-danger py-1">${data.detail || 'Error'}</div>`;
+            }
+        } catch (e) {
+            alertDiv.innerHTML = '<div class="alert alert-danger py-1">Request failed</div>';
+        }
+    });
+
+    loadUsers();
+</script>
+{% endblock %}

@@ -1,6 +1,6 @@
 import logging
 import uuid
-from fastapi import Query, APIRouter
+from fastapi import Query, APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from typing import List, Optional, Union
 from enum import Enum
@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from common.config import Config
 from common import constants as CONSTANT
 from .core.mq.qnrpc import QuantNetClient
+from api.auth import get_user_db, get_users, create_user, delete_user
 
 logger = logging.getLogger(__name__)
 
@@ -241,3 +242,38 @@ async def egp(src: str, dst: str, pairs: int, bellState: str, fidelity: float):
         operation="Entanglement generation",
         context=f"src={src} dst={dst}"
     )
+
+
+# ── User Management ──────────────────────────────────────────────────────
+
+class CreateUserRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+    role: str = "user"
+
+
+@router.get("/users", summary="List all users", tags=["Users"])
+async def list_users():
+    """List all users (admin only — enforced at the route level in main.py)."""
+    db = get_user_db()
+    return get_users(db)
+
+
+@router.post("/users", summary="Create a user", tags=["Users"])
+async def add_user(body: CreateUserRequest):
+    """Create a new user (admin only — enforced at the route level in main.py)."""
+    db = get_user_db()
+    try:
+        return create_user(db, body.username, body.email, body.password, body.role)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/users/{username}", summary="Delete a user", tags=["Users"])
+async def remove_user(username: str):
+    """Delete a user (admin only — enforced at the route level in main.py)."""
+    db = get_user_db()
+    if not delete_user(db, username):
+        raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+    return {"detail": f"User '{username}' deleted"}

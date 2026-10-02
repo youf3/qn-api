@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>QUANT-NET — Sign In</title>
+    <link href="{{ url_for('static', path='css/bootstrap.min.css') }}" rel="stylesheet"
+        integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
+    <link href="{{ url_for('static', path='css/all.min.css') }}" rel="stylesheet" type="text/css" />
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+        }
+        body {
+            background-color: #f5f7fa;
+            display: flex;
+            flex-direction: column;
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .login-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .dot-grid {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-image: radial-gradient(circle, #c0c8d4 1px, transparent 1px);
+            background-size: 30px 30px;
+            opacity: 0.4;
+            animation: drift 60s linear infinite;
+        }
+        @keyframes drift {
+            from { background-position: 0 0; }
+            to { background-position: 30px 30px; }
+        }
+        .login-card {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 400px;
+            padding: 2.5rem;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+        }
+        .login-brand {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .login-brand img {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 0.75rem;
+        }
+        .login-brand h2 {
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 0.25rem;
+        }
+        .login-brand p {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin: 0;
+        }
+        .input-group-text {
+            background-color: #f8f9fa;
+            border-right: none;
+        }
+        .input-group .form-control {
+            border-left: none;
+        }
+        .input-group .form-control:focus {
+            box-shadow: none;
+            border-color: #ced4da;
+        }
+        .input-group:focus-within .input-group-text {
+            border-color: #86b7fe;
+        }
+        .input-group:focus-within .form-control {
+            border-color: #86b7fe;
+        }
+        .login-footer {
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #f5f7fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-wrapper">
+        <div class="dot-grid"></div>
+        <div class="login-card">
+            <div class="login-brand">
+                <img src="{{ url_for('static', path='images/quantnet.png') }}" alt="QuantNet">
+                <h2>QUANT-NET</h2>
+                <p>Quantum Network Control Plane</p>
+            </div>
+
+            {% if error %}
+            <div class="alert alert-danger py-2" role="alert">
+                Invalid username or password.
+            </div>
+            {% endif %}
+
+            <form action="{{ url_for('login') }}" method="post">
+                <div class="input-group mb-3">
+                    <span class="input-group-text"><i class="fa-solid fa-user"></i></span>
+                    <input type="text" class="form-control" name="username" placeholder="Username" required autofocus>
+                </div>
+                <div class="input-group mb-3">
+                    <span class="input-group-text"><i class="fa-solid fa-lock"></i></span>
+                    <input type="password" class="form-control" name="password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Sign In</button>
+            </form>
+        </div>
+    </div>
+
+    <footer class="login-footer">
+        <img width="80px" src="{{ url_for('static', path='images/esnet_logo_circle.png') }}" alt="ESnet" class="rounded">
+        <span class="text-muted fw-bold">Quant-Net</span>
+        <img width="90px" src="{{ url_for('static', path='images/Berkeley_Lab_Logo_Large.jpg') }}" alt="Berkeley Lab" class="rounded">
+    </footer>
+</body>
+</html>

@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Depends, status
+from fastapi import FastAPI, Request, Depends, status, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +17,7 @@ from api.router import (
     get_experiments,
     get_calibrations
 )
+from api.auth import get_user_db, authenticate_user, seed_admin_user
 from quantnet_controller.common.constants import CalibrationType
 
 import json
@@ -31,11 +32,13 @@ import argparse
 _BASE_DIR = Path(__file__).resolve().parent
 
 SECRET = 'make-me-secret-e63251d54ed0eab259d267c4eb9ebb24b9340fc3ff4ae73d'
-DB = {'admin': {'username': 'admin', 'email': 'quantnet@es.net', 'password': 'admin'}}
 
 
 @asynccontextmanager
 async def lifespan(app):
+    # Seed admin user on startup
+    db = get_user_db()
+    seed_admin_user(db)
     await client.openConnection()
     yield
     await client.closeConnection()
@@ -55,7 +58,7 @@ class NotAuthenticatedException(Exception):
 
 
 def exc_handler(request, exc):
-    return RedirectResponse(url="/")
+    return RedirectResponse(url="/login")
 
 
 manager = LoginManager(SECRET, token_url='/login', use_cookie=True,
@@ -65,7 +68,8 @@ app.add_exception_handler(NotAuthenticatedException, exc_handler)
 
 @manager.user_loader()
 def load_user(username: str):
-    user = DB.get(username)
+    db = get_user_db()
+    user = db.find_one({"username": username}, {"_id": 0, "password_hash": 0})
     return user
 
 
@@ -93,7 +97,6 @@ async def _get_topology():
         node.update(node_style_map.get(node['type']))
     for edge in g.edges:
         edge.update(edge_style_map.get(edge['title']))
-    # g.show_buttons(filter_ = [])
     g.set_edge_smooth('dynamic')
     g.repulsion()
     return {
@@ -105,9 +108,12 @@ async def _get_topology():
     }
 
 
-async def _dashboard(request: Request, user=None):
-    payload = {"login": True if user else False,
-               "user": user.get("email") if user else None,
+async def _dashboard(request: Request, user: dict):
+    role = user.get("role", "user")
+    payload = {"login": True,
+               "user": user.get("email"),
+               "username": user.get("username"),
+               "role": role,
                "data": dict()}
 
     # Defaults so the dashboard always renders
@@ -123,8 +129,32 @@ async def _dashboard(request: Request, user=None):
         nodes = result if not isinstance(result, JSONResponse) else nodes
         result = await get_experiments(request=True)
         experiments = result if not isinstance(result, JSONResponse) else experiments
-        result = await get_calibrations()
-        calibrations = result if not isinstance(result, JSONResponse) else calibrations
+
+        if role == "admin":
+            result = await get_calibrations()
+            calibrations = result if not isinstance(result, JSONResponse) else calibrations
+        else:
+            calibrations = []
+            # Filter experiments to this user's only
+            experiments = [e for e in experiments if e.get("owner") == user["username"]]
+            # Extract node IDs from user's experiments
+            user_nodes = set()
+            for exp in experiments:
+                params = exp.get("parameters", {})
+                path_nodes = params.get("path", [])
+                user_nodes.update(path_nodes)
+            # Filter topology to user's nodes
+            if user_nodes:
+                topo["nodes"] = [n for n in topo["nodes"] if n.get("id") in user_nodes]
+                topo["edges"] = [e for e in topo["edges"]
+                                 if e.get("from") in user_nodes and e.get("to") in user_nodes]
+            else:
+                topo["nodes"] = []
+                topo["edges"] = []
+            topo["num_nodes"] = len(topo["nodes"])
+            # Filter agent nodes
+            nodes = [n for n in nodes
+                     if n.get("systemSettings", {}).get("ID") in user_nodes]
     except Exception:
         import traceback
         traceback.print_exc()
@@ -146,14 +176,29 @@ async def _dashboard(request: Request, user=None):
     return templates.TemplateResponse(request=request, name="main.html", context=payload)
 
 
-@app.get("/private")
-async def index(request: Request, user=Depends(manager)):
-    return await _dashboard(request, user)
-
-
 @app.get("/")
-async def index(request: Request):
-    return await _dashboard(request)
+async def root(request: Request):
+    try:
+        user = await manager.get_current_user(request)
+        if user:
+            return RedirectResponse(url="/dashboard")
+    except Exception:
+        pass
+    return RedirectResponse(url="/login")
+
+
+@app.get("/login")
+async def login_page(request: Request, error: int = 0):
+    # If already logged in, redirect to dashboard
+    try:
+        user = await manager.get_current_user(request)
+        if user:
+            return RedirectResponse(url="/dashboard")
+    except Exception:
+        pass
+    return templates.TemplateResponse(
+        request=request, name="login.html", context={"error": error}
+    )
 
 
 @app.post("/login")
@@ -161,30 +206,44 @@ async def login(data: OAuth2PasswordRequestForm = Depends()):
     username = data.username
     password = data.password
 
-    user = load_user(username)
+    db = get_user_db()
+    user = authenticate_user(db, username, password)
     if not user:
-        raise InvalidCredentialsException  # you can also use your own HTTPException
-    elif password != user['password']:
-        raise InvalidCredentialsException
+        return RedirectResponse(url="/login?error=1", status_code=status.HTTP_302_FOUND)
 
     access_token = manager.create_access_token(
         data=dict(sub=username)
     )
-    resp = RedirectResponse(url="/private", status_code=status.HTTP_302_FOUND)
+    resp = RedirectResponse(url="/dashboard", status_code=status.HTTP_302_FOUND)
     manager.set_cookie(resp, access_token)
     return resp
+
+
+@app.get("/dashboard")
+async def dashboard(request: Request, user=Depends(manager)):
+    return await _dashboard(request, user)
+
+
+@app.get("/admin/users")
+async def admin_users_page(request: Request, user=Depends(manager)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return templates.TemplateResponse(
+        request=request, name="admin_users.html",
+        context={"login": True, "user": user.get("email"), "role": "admin"}
+    )
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    response = RedirectResponse(url="/login")
+    response.delete_cookie("access_token")
+    return response
 
 
 @app.get("/login_sso")
 async def login_sso(request: Request):
     pass
-
-
-@app.get("/logout")
-async def logout(request: Request):
-    response = RedirectResponse(url="/")
-    response.delete_cookie("access_token")
-    return response
 
 
 def custom_openapi():
@@ -193,7 +252,6 @@ def custom_openapi():
     openapi_schema = get_openapi(
         title="Quant-Net API",
         version="0.1.0",
-        # summary="This is a very custom OpenAPI schema",
         description="The web API that interfaces **Quant-Net Controller**.",
         routes=app.routes,
     )
@@ -205,6 +263,7 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
+
 
 def cli():
     """CLI entry point for the qn-api command."""

@@ -150,6 +150,7 @@ export class SpgModal {
         srcNodes.forEach(src => queryParams.append('src', src));
         queryParams.append('rate', rate);
         queryParams.append('duration', duration);
+        queryParams.append('owner', window.app.username);
 
         const url = `api/${endpoint}?${queryParams.toString()}`;
         console.log(url);

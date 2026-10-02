@@ -27,7 +27,7 @@ export class EgpModal {
         const bellState = document.getElementById('bellState').value;
         const fidelity = document.getElementById('fidelity').value;
 
-        const params = new URLSearchParams({ src, dst, pairs, bellState, fidelity });
+        const params = new URLSearchParams({ src, dst, pairs, bellState, fidelity, owner: window.app.username });
 
         fetch(`api/egp?${params.toString()}`, { method: 'POST' })
             .then(response => {

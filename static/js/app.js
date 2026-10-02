@@ -50,7 +50,9 @@ export class App {
         window.app = this;
 
         this.role = role;
-        console.log('View data:', data, 'Role:', role);
+        // Extract username from the page context (passed by main.py)
+        this.username = document.body.getAttribute('data-username') || 'unknown';
+        console.log('View data:', data, 'Role:', role, 'Username:', this.username);
 
         // ── Instantiate core services ────────────────────────────────────
         this.eventBus = new EventBus();

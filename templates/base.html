@@ -76,7 +76,7 @@
     </style>
 </head>
 
-<body>
+<body data-username="{{ username }}">
     {% include "components/navbar.html" %}
     {% with alert=alert %}
     {% include "components/alert.html" %}

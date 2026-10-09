@@ -14,12 +14,14 @@
 export class TopologyGraph {
     /**
      * @param {string} containerId - ID of the DOM element for the vis.js graph
+     * @param {Object} eventBus - Event bus for MQTT updates
      * @param {Object} [options]
      * @param {Function} [options.onDoubleClick] - Callback when a node is double-clicked, receives nodeId
      * @param {Object} [options.networkOptions] - vis.js Network options override
      */
-    constructor(containerId, options = {}) {
+    constructor(containerId, eventBus, options = {}) {
         this._containerId = containerId;
+        this._eventBus = eventBus;
         this._onDoubleClick = options.onDoubleClick || null;
         this._networkOptions = options.networkOptions || {
             physics: { enabled: true },
@@ -64,6 +66,16 @@ export class TopologyGraph {
                 }
             });
         }
+
+        // Subscribe to MQTT link state updates
+        if (this._eventBus) {
+            this._eventBus.on('mqtt:link:stateUpdate', ({ src_cid, dst_cid, state }) => {
+                this.updateLinkState(src_cid, dst_cid, state);
+            });
+            this._eventBus.on('mqtt:agent:state', ({ rid, value }) => {
+                this.updateNodeState(rid, value);
+            });
+        }
     }
 
     /**
@@ -88,5 +100,73 @@ export class TopologyGraph {
      */
     getNetwork() {
         return this._network;
+    }
+
+    /**
+     * Update edge styling based on link state.
+     * Finds all edges between src_cid and dst_cid and applies width/opacity/dashes/color.
+     * @param {string} src_cid - Source node ID
+     * @param {string} dst_cid - Destination node ID
+     * @param {string} state - Link state: QUANTUM_UP, CONTROL_UP, INIT, or DOWN
+     */
+    updateLinkState(src_cid, dst_cid, state) {
+        if (!this._edges) return;
+        
+        const styleMap = {
+            'QUANTUM_UP': { width: 3, opacity: 1.0, dashes: false, color: null },
+            'CONTROL_UP': { width: 2, opacity: 1.0, dashes: false, color: null },
+            'INIT': { width: 1, opacity: 0.5, dashes: [5, 5], color: null },
+            'DOWN': { width: 1, opacity: 0.3, dashes: [2, 4], color: '#cccccc' }
+        };
+        
+        const style = styleMap[state] || styleMap['DOWN'];
+        
+        // Find edges matching (from, to) and update them
+        const updates = [];
+        this._edges.forEach(edge => {
+            if (edge.from === src_cid && edge.to === dst_cid) {
+                const update = { id: edge.id };
+                update.width = style.width;
+                update.opacity = style.opacity;
+                update.dashes = style.dashes;
+                if (style.color) {
+                    update.color = style.color;
+                }
+                updates.push(update);
+            }
+        });
+        
+        if (updates.length > 0) {
+            this._edges.update(updates);
+        }
+    }
+
+    /**
+     * Update node border styling based on agent state.
+     * @param {string} nodeId - Node ID (agent ID)
+     * @param {string} state - Agent state: IN_SPEC or OUT_OF_SPEC
+     */
+    updateNodeState(nodeId, state) {
+        if (!this._nodes) return;
+        
+        let borderColor = '#999999';  // default grey
+        let borderWidth = 1;
+        
+        if (state === 'IN_SPEC') {
+            borderColor = '#32CD32';  // green
+            borderWidth = 3;
+        } else if (state === 'OUT_OF_SPEC') {
+            borderColor = '#FF0000';  // red
+            borderWidth = 3;
+        }
+        
+        // Update node border properties, preserving background color
+        this._nodes.update({
+            id: nodeId,
+            color: {
+                border: borderColor,
+                borderWidth: borderWidth
+            }
+        });
     }
 }

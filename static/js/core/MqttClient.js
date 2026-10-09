@@ -14,6 +14,7 @@
  * Events emitted:
  *   mqtt:agent:heartbeat     — { rid, raw }
  *   mqtt:agent:state         — { rid, value, raw }
+ *   mqtt:link:stateUpdate    — { src_cid, dst_cid, channel_id, state, raw }
  *   mqtt:agent:taskPhase     — { rid, value, raw }
  *   mqtt:agent:taskUpdate    — { rid, value, raw }
  *   mqtt:agent:taskResult    — { data }
@@ -104,6 +105,15 @@ export class MqttClient {
         }
         else if (data.eventType === 'agentState') {
             this._eventBus.emit('mqtt:agent:state', { rid: data.rid, value: data.value, raw: data });
+        }
+        else if (data.eventType === 'linkStateUpdate') {
+            this._eventBus.emit('mqtt:link:stateUpdate', {
+                src_cid: data.value.src_cid,
+                dst_cid: data.value.dst_cid,
+                channel_id: data.value.channel_id,
+                state: data.value.state,
+                raw: data
+            });
         }
         else if (data.eventType === 'agentTaskSchedulerPhase') {
             this._eventBus.emit('mqtt:agent:taskPhase', { rid: data.rid, value: data.value, raw: data });

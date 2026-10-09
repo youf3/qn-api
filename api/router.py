@@ -1,6 +1,6 @@
 import logging
 import uuid
-from fastapi import Query, APIRouter, Depends, HTTPException
+from fastapi import Query, APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from typing import List, Optional, Union
 from enum import Enum
@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from common.config import Config
 from common import constants as CONSTANT
 from .core.mq.qnrpc import QuantNetClient
+from .core.linkstate import get_link_states
 from api.auth import get_user_db, get_users, create_user, delete_user
 
 logger = logging.getLogger(__name__)
@@ -66,22 +67,27 @@ class Experiment(BaseModel):
 
 # ── Centralised error handling ───────────────────────────────────────────
 
-async def _rpc_request(coro, *, operation: str = "RPC request", context: str = ""):
+async def _rpc_request(coro, *, operation: str = "RPC request",
+                       context: str = ""):
     """
     Execute an RPC coroutine with unified error handling.
 
     Parameters
     ----------
     coro : awaitable
-        The already-constructed coroutine to await (e.g. ``client.getNode(ID)``).
+        The already-constructed coroutine to await
+        (e.g. ``client.getNode(ID)``).
     operation : str
-        Human-readable name of the operation (used in error messages).
+        Human-readable name of the operation
+        (used in error messages).
     context : str
-        Additional context for log messages (e.g. parameter values).
+        Additional context for log messages
+        (e.g. parameter values).
 
     Returns
     -------
-    The result of the coroutine on success, or a JSONResponse on failure.
+    The result of the coroutine on success, or a JSONResponse
+    on failure.
     """
     try:
         return await coro
@@ -135,14 +141,23 @@ async def get_topo(full: bool = False):
     )
 
 
-@router.post("/pingpong", summary="Send pings to a list of remotes", tags=["PingPong"])
-async def pingpong(remotes: List[str] = Query(None), iterations: int = 5):
+@router.post(
+    "/pingpong",
+    summary="Send pings to a list of remotes",
+    tags=["PingPong"]
+)
+async def pingpong(remotes: List[str] = Query(None),
+                   iterations: int = 5):
     """
     Send pings to a list of remotes
     - **remotes**: the name list of remote nodes
     """
-    request = {'type': 'ping', 'destinations': remotes, 'iterations': iterations,
-               'token': uuid.uuid4().hex}
+    request = {
+        'type': 'ping',
+        'destinations': remotes,
+        'iterations': iterations,
+        'token': uuid.uuid4().hex
+    }
     return await _rpc_request(
         client.pingpong(request),
         operation="Ping",
@@ -150,8 +165,13 @@ async def pingpong(remotes: List[str] = Query(None), iterations: int = 5):
     )
 
 
-@router.post("/calibrate", summary="Run a calibration process", tags=["Calibrations"])
-async def calibrate(type: int, src: str, dst: str, power: float, light: str):
+@router.post(
+    "/calibrate",
+    summary="Run a calibration process",
+    tags=["Calibrations"]
+)
+async def calibrate(type: int, src: str, dst: str,
+                    power: float, light: str):
     """
     Run a calibration process with all the information
     - **src**: the name of source agent
@@ -160,18 +180,29 @@ async def calibrate(type: int, src: str, dst: str, power: float, light: str):
     - **light**: light signal, either "D" or "H"
     """
     return await _rpc_request(
-        client.calibrate(type=type, src=src, dst=dst, power=power, light=light),
+        client.calibrate(
+            type=type, src=src, dst=dst,
+            power=power, light=light
+        ),
         operation="Calibration",
         context=f"src={src} dst={dst}"
     )
 
 
 @router.get("/calibration")
-@router.get("/calibration/{calid}", summary="Get calibration information", tags=["Calibrations"])
-async def get_calibrations(calid: str = None, last: bool = False):
+@router.get(
+    "/calibration/{calid}",
+    summary="Get calibration information",
+    tags=["Calibrations"]
+)
+async def get_calibrations(calid: str = None,
+                           last: bool = False):
     """
-    Get the information of the given calibration, latest one or all calibrations
-    - **calid**: the calibration id, e.g. "6cc93232d75f4f08b598a9d4f6f5bf10". If blank, return all calibrations
+    Get the information of the given calibration,
+    latest one or all calibrations
+    - **calid**: the calibration id,
+      e.g. "6cc93232d75f4f08b598a9d4f6f5bf10".
+      If blank, return all calibrations
     - **last**: if true, get the latest calibration
     """
     return await _rpc_request(
@@ -181,8 +212,17 @@ async def get_calibrations(calid: str = None, last: bool = False):
     )
 
 
-@router.get("/experiments", response_model=List[Experiment], tags=["Experiments"])
-@router.get("/experiments/{expid}", response_model=List[Experiment], summary="Get experiment information", tags=["Experiments"])
+@router.get(
+    "/experiments",
+    response_model=List[Experiment],
+    tags=["Experiments"]
+)
+@router.get(
+    "/experiments/{expid}",
+    response_model=List[Experiment],
+    summary="Get experiment information",
+    tags=["Experiments"]
+)
 async def get_experiments(
     expid: str = None,
     last: bool = False,
@@ -190,14 +230,21 @@ async def get_experiments(
     agent_id: str = None
 ):
     """
-    Get the information of the given experiment, latest one or all experiments
-    - **expid**: the experiment id. If blank, return all experiments
+    Get the information of the given experiment,
+    latest one or all experiments
+    - **expid**: the experiment id. If blank,
+      return all experiments
     - **last**: if true, get the latest experiment
-    - **request**: if true, return the original request instead of the experiment
-    - **agent_id**: the agent id to filter experiments by
+    - **request**: if true, return the original
+      request instead of the experiment
+    - **agent_id**: the agent id to filter
+      experiments by
     """
     return await _rpc_request(
-        client.getExperiment(ID=expid, last=last, request=request, agent_id=agent_id),
+        client.getExperiment(
+            ID=expid, last=last, request=request,
+            agent_id=agent_id
+        ),
         operation="Fetch experiments",
         context=f"expid={expid}"
     )
@@ -217,28 +264,41 @@ async def get_tasks(agent_id: str = None):
 
 
 @router.post("/bsm")
-async def bsm(src: List[str] = Query(None), rate: float = 10, duration: float = 120, owner: str = None):
+async def bsm(src: List[str] = Query(None), rate: float = 10,
+              duration: float = 120, owner: str = None):
     return await _rpc_request(
-        client.bsmExperiment(nodes=src, rate=rate, duration=duration, owner=owner),
+        client.bsmExperiment(
+            nodes=src, rate=rate,
+            duration=duration, owner=owner
+        ),
         operation="BSM experiment",
         context=f"src={src}"
     )
 
 
 @router.post("/spg")
-async def spg(src: List[str] = Query(None), rate: float = 10, duration: float = 120, owner: str = None):
+async def spg(src: List[str] = Query(None), rate: float = 10,
+              duration: float = 120, owner: str = None):
     return await _rpc_request(
-        client.singlePhotonGeneration(nodes=src, rate=rate, duration=duration, owner=owner),
+        client.singlePhotonGeneration(
+            nodes=src, rate=rate,
+            duration=duration, owner=owner
+        ),
         operation="Single photon generation",
         context=f"src={src}"
     )
 
 
 @router.post("/egp")
-async def egp(src: str, dst: str, pairs: int, bellState: str, fidelity: float, owner: str = None):
+async def egp(src: str, dst: str, pairs: int,
+              bellState: str, fidelity: float,
+              owner: str = None):
     return await _rpc_request(
-        client.entanglementGeneration(src=src, dst=dst, pairs=pairs,
-                                       bellState=bellState, fidelity=fidelity, owner=owner),
+        client.entanglementGeneration(
+            src=src, dst=dst, pairs=pairs,
+            bellState=bellState, fidelity=fidelity,
+            owner=owner
+        ),
         operation="Entanglement generation",
         context=f"src={src} dst={dst}"
     )
@@ -262,18 +322,36 @@ async def list_users():
 
 @router.post("/users", summary="Create a user", tags=["Users"])
 async def add_user(body: CreateUserRequest):
-    """Create a new user (admin only — enforced at the route level in main.py)."""
+    """Create a new user (admin only).
+
+    Enforced at the route level in main.py.
+    """
     db = get_user_db()
     try:
-        return create_user(db, body.username, body.email, body.password, body.role)
+        return create_user(db, body.username, body.email,
+                           body.password, body.role)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/users/{username}", summary="Delete a user", tags=["Users"])
+@router.delete("/users/{username}", summary="Delete a user",
+               tags=["Users"])
 async def remove_user(username: str):
-    """Delete a user (admin only — enforced at the route level in main.py)."""
+    """Delete a user (admin only).
+
+    Enforced at the route level in main.py.
+    """
     db = get_user_db()
     if not delete_user(db, username):
-        raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"User '{username}' not found"
+        )
     return {"detail": f"User '{username}' deleted"}
+
+
+@router.get("/link_states", summary="Get all link states", tags=["Topology"])
+async def fetch_link_states():
+    """Get current link states from LinkState DB collection."""
+    states = await get_link_states()
+    return states

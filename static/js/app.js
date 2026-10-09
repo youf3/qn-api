@@ -108,7 +108,7 @@ export class App {
             onOpenChart: () => this.polChart.openModal(),
             calibrations: this.calibrations
         });
-        this.topology = new TopologyGraph('topology-container', {
+        this.topology = new TopologyGraph('topology-container', this.eventBus, {
             onDoubleClick: (nodeId) => this.agentModal.openFromTopology(nodeId)
         });
         this.agentTable = new AgentTable('agent-table-body', {

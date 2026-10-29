@@ -6,6 +6,9 @@ from quantnet_controller.core.abstractdatabase import (
 from quantnet_controller.db.async_broker import (
     init_async_broker_config
 )
+from quantnet_controller.db.nosql.collection.async_collection import (
+    init_async_collection_config
+)
 from common.config import Config
 
 logger = logging.getLogger(__name__)
@@ -23,6 +26,7 @@ async def get_link_states() -> list:
         # Initialize async broker config if not already done
         config = Config()
         init_async_broker_config(config)
+        init_async_collection_config(config)
 
         # Get the link state collection handler
         db = AsyncAbstractDatabase()

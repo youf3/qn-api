@@ -105,9 +105,84 @@
 
     <div class="row g-4 mt-2">
         <div class="col-12">
-            <div class="px-3 py-2 text-muted small d-flex gap-5">
-                <span><strong>Link States:</strong> <span style="border-bottom: 3px solid blue;">████</span> QUANTUM_UP &nbsp; <span style="border-bottom: 2px solid blue;">███</span> CONTROL_UP &nbsp; <span style="border-bottom: 1px dashed blue;">-&nbsp;-&nbsp;-</span> INIT &nbsp; <span style="border-bottom: 1px dotted #ccc;">·&nbsp;·&nbsp;·</span> DOWN</span>
-                <span><strong>Agent States:</strong> <span style="color: #32CD32;">●</span> IN_SPEC &nbsp; <span style="color: #FF0000;">●</span> OUT_OF_SPEC</span>
+            <div class="px-3 py-2 text-muted small d-flex flex-wrap align-items-center gap-4">
+                <span class="d-inline-flex align-items-center flex-wrap gap-2">
+                    <strong>Channel Types:</strong>
+                    <span class="d-inline-flex align-items-center gap-1"><span style="display:inline-block;width:24px;height:0;border-top:3px solid blue;"></span> Quantum</span>
+                    <span class="d-inline-flex align-items-center gap-1 ms-2"><span style="display:inline-block;width:24px;height:0;border-top:2px solid purple;"></span> Classical</span>
+                </span>
+                <span class="d-inline-flex align-items-center flex-wrap gap-2">
+                    <strong>Link States:</strong>
+                    <span class="d-inline-flex align-items-center gap-1"><span style="display:inline-block;width:24px;height:0;border-top:3px solid blue;"></span> QUANTUM_UP</span>
+                    <span class="d-inline-flex align-items-center gap-1 ms-2"><span style="display:inline-block;width:24px;height:0;border-top:2px solid purple;"></span> CONTROL_UP</span>
+                    <span class="d-inline-flex align-items-center gap-1 ms-2"><span style="display:inline-block;width:24px;height:0;border-top:1px dashed #666;"></span> INIT</span>
+                    <span class="d-inline-flex align-items-center gap-1 ms-2"><span style="display:inline-block;width:24px;height:0;border-top:1px dotted #aaa;"></span> DOWN</span>
+                </span>
+                <span class="d-inline-flex align-items-center flex-wrap gap-2">
+                    <strong>Agent States:</strong>
+                    <span class="d-inline-flex align-items-center gap-1"><span style="color: #32CD32;">●</span> IN_SPEC</span>
+                    <span class="d-inline-flex align-items-center gap-1 ms-2"><span style="color: #FF0000;">●</span> OUT_OF_SPEC</span>
+                    <span class="d-inline-flex align-items-center gap-1 ms-2"><span style="color: grey;">●</span> UNKNOWN</span>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Real-Time Link & Quantum Probe Status Panel -->
+    <div class="row g-4 mt-3">
+        <div class="col-12">
+            <div class="card shadow-sm" id="probe-card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Link &amp; Quantum Probe Status (Real-Time)</span>
+                    <div id="probe-summary-badges" class="d-flex gap-2 small">
+                        <span class="badge bg-secondary">Loading...</span>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height: 280px; overflow-y: auto;">
+                        <table class="table table-striped table-hover align-middle mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>Link (Src &rarr; Dst)</th>
+                                    <th>Channel</th>
+                                    <th>Link State</th>
+                                    <th>Probe Status</th>
+                                    <th>TX / RX</th>
+                                    <th>OK / Fail</th>
+                                    <th>Latency</th>
+                                    <th>VLink / Target</th>
+                                    <th>Last Probe</th>
+                                </tr>
+                            </thead>
+                            <tbody id="probe-table-body">
+                                <!-- Dynamic Probe Status Rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="border-top px-3 py-2 bg-light d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold small text-secondary">Recent Periodic Probes (Live Stream &mdash; every 10s)</span>
+                        <span id="probe-stream-counter" class="badge bg-outline-secondary text-muted small">0 events</span>
+                    </div>
+                    <div class="table-responsive" style="max-height: 240px; overflow-y: auto;">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light sticky-top small">
+                                <tr>
+                                    <th>Time (UTC)</th>
+                                    <th>Seq #</th>
+                                    <th>Probe ID</th>
+                                    <th>Link</th>
+                                    <th>VLink / UDP Target</th>
+                                    <th>Optical</th>
+                                    <th>Latency (Photons)</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="probe-history-table-body" class="small">
+                                <!-- Dynamic Periodic Probe Event Stream -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

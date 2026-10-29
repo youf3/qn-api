@@ -107,21 +107,27 @@ def load_user(username: str):
 
 def _apply_link_state_styling(edge, state):
     """
-    Apply width, opacity, and dashes to an edge dict based on link state.
-    Preserves the edge color (channel type).
+    Apply width, opacity, dashes, and color to an edge dict based on link state.
+    Preserves the edge base color ('blue' for quantum, 'purple' for classical).
     """
+    is_quantum = edge.get('channel_type') == 'quantum'
+    base_color = edge.get('base_color') or ('blue' if is_quantum else 'purple')
+
     if state == 'QUANTUM_UP':
         edge['width'] = 3
         edge['opacity'] = 1.0
         edge['dashes'] = False
+        edge['color'] = base_color
     elif state == 'CONTROL_UP':
         edge['width'] = 2
         edge['opacity'] = 1.0
         edge['dashes'] = False
+        edge['color'] = base_color
     elif state == 'INIT':
         edge['width'] = 1
         edge['opacity'] = 0.5
         edge['dashes'] = [5, 5]
+        edge['color'] = base_color
     else:  # DOWN or unknown
         edge['width'] = 1
         edge['opacity'] = 0.3
@@ -132,17 +138,11 @@ def _apply_link_state_styling(edge, state):
 async def _get_topology():
     edge_style_map = {
         'quantum': {'color': 'blue', 'dashes': False},
-        'classic_clk': {'color': 'purple', 'dashes': True},
-        'classic_photon_gen': {'color': 'green', 'dashes': True},
-        'classic_bsm_result': {'color': 'brown', 'dashes': True},
-        'stabilization': {'color': 'teal'}
+        'classical': {'color': 'purple', 'dashes': False},
     }
 
     node_style_map = {
-        'QNode': {'color': 'orange'},
-        'BSMNode': {'color': 'lightgreen'},
-        'MNode': {'color': 'grey'},
-        'OpticalSwitch': {'color': 'lightblue', 'mass': 10}
+        'OpticalSwitch': {'mass': 10}
     }
 
     data = await get_topo()
@@ -156,25 +156,69 @@ async def _get_topology():
     g.from_nx(nxg)
     for node in g.nodes:
         node['physics'] = True
-        node.update(node_style_map.get(node['type']))
+        node['color'] = 'grey'
+        node.update(node_style_map.get(node.get('type'), {}))
     for edge in g.edges:
-        edge.update(edge_style_map.get(edge['title']))
+        raw_type = str(edge.get('title', '')).lower()
+        edge_type = 'quantum' if raw_type == 'quantum' else 'classical'
+        style = edge_style_map[edge_type]
+        edge['channel_type'] = edge_type
+        edge['base_color'] = style['color']
+        edge.update(style)
     g.set_edge_smooth('dynamic')
 
     # Fetch initial link states and annotate edges
     link_states = await get_link_states()
     link_state_map = {}
     for ls in link_states:
-        # Key by (src_cid, dst_cid)
-        key = (ls.get('src_cid'), ls.get('dst_cid'))
-        link_state_map[key] = ls.get('state', 'DOWN')
+        src = ls.get('src_cid')
+        dst = ls.get('dst_cid')
+        is_q_val = ls.get('is_quantum')
+        has_type_info = (
+            is_q_val is not None or bool(ls.get('channel_id'))
+        )
+        is_quantum = (
+            bool(is_q_val)
+            if is_q_val is not None
+            else 'quantum' in (ls.get('channel_id') or '').lower()
+        )
+        key = (src, dst, is_quantum)
+        # Prefer QUANTUM_UP or higher state if multiple channels exist
+        state_rank = {'QUANTUM_UP': 4, 'CONTROL_UP': 3, 'INIT': 2, 'DOWN': 1}
+        existing = link_state_map.get(key)
+        if not existing or state_rank.get(ls.get('state'), 0) >= state_rank.get(existing.get('state'), 0):
+            link_state_map[key] = ls
+        # Only store untyped fallback by (src, dst) when channel type is unspecified
+        if not has_type_info:
+            fallback_key = (src, dst)
+            existing_fb = link_state_map.get(fallback_key)
+            if not existing_fb or state_rank.get(ls.get('state'), 0) >= state_rank.get(existing_fb.get('state'), 0):
+                link_state_map[fallback_key] = ls
 
     # Apply link state styling to edges
     for edge in g.edges:
         src = edge.get('from')
         dst = edge.get('to')
-        state = link_state_map.get((src, dst), 'DOWN')
+        edge_type = edge.get('channel_type', 'classical')
+        is_q_edge = edge_type == 'quantum'
+        ls = link_state_map.get((src, dst, is_q_edge)) or link_state_map.get((src, dst))
+        state = ls.get('state', 'DOWN') if ls else 'DOWN'
         _apply_link_state_styling(edge, state)
+        if ls and is_q_edge:
+            probe_info = ls.get('last_probe_info') or {}
+            tx = ls.get('probe_tx_count') or ls.get('probe_rx_count') or 0
+            tof = probe_info.get('tof')
+            vlink = probe_info.get('vlink')
+            tip = f"quantum ({state})"
+            if tx:
+                tip += f" | Probes: {tx}"
+            if tof is not None:
+                tip += f" | ToF: {float(tof) * 1000:.2f}ms"
+            if vlink:
+                tip += f" | {vlink}"
+            edge['title'] = tip
+        else:
+            edge['title'] = f"{edge_type} ({state})"
 
     g.repulsion()
     return {
@@ -205,15 +249,32 @@ async def _dashboard(request: Request, user: dict):
     nodes = []
     experiments = []
     calibrations = []
+    link_states = []
     alert = None
 
     try:
         topo = await _get_topology()
+        link_states = await get_link_states()
         result = await get_nodes()
         nodes = (
             result if not isinstance(result, JSONResponse)
             else nodes
         )
+        state_color_map = {
+            "IN_SPEC": "#32CD32",
+            "OUT_OF_SPEC": "#FF0000",
+        }
+        node_state_colors = {
+            n.get("systemSettings", {}).get("ID"): state_color_map.get(
+                n.get("state", {}).get("value"), "grey"
+            )
+            for n in nodes
+            if isinstance(n, dict) and n.get("systemSettings", {}).get("ID")
+        }
+        for topo_node in topo.get("nodes", []):
+            nid = topo_node.get("id")
+            if nid in node_state_colors:
+                topo_node["color"] = node_state_colors[nid]
         result = await get_experiments(request=True)
         experiments = (
             result if not isinstance(result, JSONResponse)
@@ -250,9 +311,15 @@ async def _dashboard(request: Request, user: dict):
                     if (e.get("from") in user_nodes and
                         e.get("to") in user_nodes)
                 ]
+                link_states = [
+                    ls for ls in link_states
+                    if (ls.get("src_cid") in user_nodes and
+                        ls.get("dst_cid") in user_nodes)
+                ]
             else:
                 topo["nodes"] = []
                 topo["edges"] = []
+                link_states = []
             topo["num_nodes"] = len(topo["nodes"])
             # Filter agent nodes
             nodes = [
@@ -271,6 +338,7 @@ async def _dashboard(request: Request, user: dict):
             "experiments": experiments,
             "nodes": nodes,
             "calibrations": calibrations,
+            "link_states": link_states,
             "cal_type_map": (
                 {m.value: m.label for m in CalibrationType}
             ),

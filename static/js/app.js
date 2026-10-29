@@ -7,6 +7,7 @@ import { CalibrationStore } from './models/CalibrationStore.js';
 import { ExperimentStore } from './models/ExperimentStore.js';
 import { DebugPanel } from './components/DebugPanel.js';
 import { AgentTable } from './components/AgentTable.js';
+import { ProbeTable } from './components/ProbeTable.js';
 import { ExperimentTable } from './components/ExperimentTable.js';
 import { CalibrationTable } from './components/CalibrationTable.js';
 import { TopologyGraph } from './components/TopologyGraph.js';
@@ -64,6 +65,7 @@ export class App {
         this.experimentStore = new ExperimentStore(this.eventBus);
 
         // Hydrate from server data
+        this.initialLinkStates = data.link_states || [];
         this.agentStore.loadFromServer(data.nodes);
         this.calibrationStore.loadCalibrations(data.calibrations);
         this.experimentStore.loadFromServer(data);
@@ -113,7 +115,22 @@ export class App {
         });
         this.agentTable = new AgentTable('agent-table-body', {
             onOpenModal: (agentData) => this.agentModal.open(agentData),
-            getTopoNodes: () => this.topology.getNodes()
+            getTopoNodes: () => this.topology.getNodes(),
+            onStateChange: (agentId, state) => this.topology.updateNodeState(agentId, state)
+        });
+        this.probeTable = new ProbeTable('probe-table-body', {
+            summaryId: 'probe-summary-badges',
+            historyTbodyId: 'probe-history-table-body',
+            streamCounterId: 'probe-stream-counter',
+            getTopoNodes: () => this.topology.getNodes(),
+            getTopoEdges: () => this.topology.getEdges(),
+            onLinkUpdated: (ls) => {
+                if (this.topology && ls) {
+                    this.topology.updateLinkState(
+                        ls.src_cid, ls.dst_cid, ls.state, ls
+                    );
+                }
+            }
         });
 
         // ── Instantiate chart components ─────────────────────────────────
@@ -154,7 +171,10 @@ export class App {
         this._wireDomListeners();
 
         // ── Periodic tasks ───────────────────────────────────────────────
-        setInterval(() => this.agentTable.incrementLastSeen(this.nodes), 1000);
+        setInterval(() => {
+            this.agentTable.incrementLastSeen(this.nodes);
+            this.probeTable.incrementAge();
+        }, 1000);
 
         // ── Page load ────────────────────────────────────────────────────
         window.onload = () => this._onLoad();
@@ -163,8 +183,17 @@ export class App {
     /** @private */
     _onLoad() {
         this.topology.draw(this.experimentStore.getTopology());
+        Object.entries(this.nodes || {}).forEach(([id, node]) => {
+            if (node && node.state) {
+                this.topology.updateNodeState(id, node.state);
+            }
+        });
         this.mqttClient.connect();
         this.agentTable.render(this.nodes);
+        this.probeTable.loadFromServer(this.initialLinkStates);
+        // Fetch fresh link_states from API on load and poll periodically as fallback
+        this._pollLinkStates(false);
+        setInterval(() => this._pollLinkStates(true), 2500);
         this.experimentTable.render(
             this.experimentStore.getExperiments(),
             this.expSortDescending
@@ -180,6 +209,18 @@ export class App {
             this.agentStore.nodeList()
         );
         this.spgModal.populateSources(this.agentStore.nodeList());
+    }
+
+    /** @private */
+    _pollLinkStates(isPoll = true) {
+        fetch('/api/link_states')
+            .then(r => r.ok ? r.json() : null)
+            .then(list => {
+                if (Array.isArray(list) && list.length > 0) {
+                    this.probeTable.loadFromServer(list, { isPoll });
+                }
+            })
+            .catch(() => {});
     }
 
     /** @private */
@@ -206,6 +247,14 @@ export class App {
             this.nodes[rid].lastSeen = 0;
             this.nodes[rid].state = value;
             this.agentTable.updateStatusIcon(this.nodes, rid, stateToIconColor);
+        });
+
+        // Link & quantum probe state update
+        eb.on('mqtt:link:stateUpdate', (payload) => {
+            this.probeTable.handleUpdate(payload);
+            if (payload && payload.raw) {
+                this.debugPanel.addMessage(JSON.stringify(payload.raw));
+            }
         });
 
         // Agent task scheduler phase

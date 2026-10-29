@@ -69,8 +69,8 @@ export class TopologyGraph {
 
         // Subscribe to MQTT link state updates
         if (this._eventBus) {
-            this._eventBus.on('mqtt:link:stateUpdate', ({ src_cid, dst_cid, state }) => {
-                this.updateLinkState(src_cid, dst_cid, state);
+            this._eventBus.on('mqtt:link:stateUpdate', (payload) => {
+                this.updateLinkState(payload.src_cid, payload.dst_cid, payload.state, payload.value || payload);
             });
             this._eventBus.on('mqtt:agent:state', ({ rid, value }) => {
                 this.updateNodeState(rid, value);
@@ -104,68 +104,104 @@ export class TopologyGraph {
 
     /**
      * Update edge styling based on link state.
-     * Finds all edges between src_cid and dst_cid and applies width/opacity/dashes/color.
+     * Finds matching edges between src_cid and dst_cid and applies width/opacity/dashes/color.
      * @param {string} src_cid - Source node ID
      * @param {string} dst_cid - Destination node ID
      * @param {string} state - Link state: QUANTUM_UP, CONTROL_UP, INIT, or DOWN
+     * @param {Object} [info] - Additional linkStateUpdate payload fields
      */
-    updateLinkState(src_cid, dst_cid, state) {
+    updateLinkState(src_cid, dst_cid, state, info = {}) {
         if (!this._edges) return;
-        
+
         const styleMap = {
             'QUANTUM_UP': { width: 3, opacity: 1.0, dashes: false, color: null },
             'CONTROL_UP': { width: 2, opacity: 1.0, dashes: false, color: null },
             'INIT': { width: 1, opacity: 0.5, dashes: [5, 5], color: null },
             'DOWN': { width: 1, opacity: 0.3, dashes: [2, 4], color: '#cccccc' }
         };
-        
-        const style = styleMap[state] || styleMap['DOWN'];
-        
-        // Find edges matching (from, to) and update them
+
+        const hasChannelFilter = Boolean(
+            (info && info.is_quantum !== undefined && info.is_quantum !== null) ||
+            (info && info.channel_id) ||
+            state === 'QUANTUM_UP'
+        );
+        const isQuantumEvent = (info && info.is_quantum !== undefined && info.is_quantum !== null)
+            ? Boolean(info.is_quantum)
+            : (((info && info.channel_id) || '').toLowerCase().includes('quantum') || state === 'QUANTUM_UP');
+
+        // Find edges matching (from, to) and channel type
         const updates = [];
         this._edges.forEach(edge => {
             if (edge.from === src_cid && edge.to === dst_cid) {
+                const edgeIsQuantum = edge.channel_type === 'quantum';
+                const channelType = edgeIsQuantum ? 'quantum' : 'classical';
+
+                // Only update quantum edges on quantum channel events, or classical edges on classical events
+                if (hasChannelFilter && edgeIsQuantum !== isQuantumEvent) {
+                    return;
+                }
+
+                const style = styleMap[state] || styleMap['DOWN'];
+                const baseColor = edge.base_color || (edgeIsQuantum ? 'blue' : 'purple');
+
                 const update = { id: edge.id };
                 update.width = style.width;
                 update.opacity = style.opacity;
                 update.dashes = style.dashes;
-                if (style.color) {
-                    update.color = style.color;
+                update.color = style.color || baseColor;
+
+                if (edgeIsQuantum && info) {
+                    const probeInfo = info.last_probe_info || {};
+                    const tx = info.probe_tx_count || info.probe_rx_count || 0;
+                    let tip = `quantum (${state})`;
+                    if (tx) tip += ` | Probes: ${tx}`;
+                    if (probeInfo.tof !== undefined && probeInfo.tof !== null) tip += ` | ToF: ${(Number(probeInfo.tof) * 1000).toFixed(2)}ms`;
+                    if (probeInfo.vlink) tip += ` | ${probeInfo.vlink}`;
+                    update.title = tip;
+                } else {
+                    update.title = `${channelType} (${state})`;
                 }
                 updates.push(update);
             }
         });
-        
+
         if (updates.length > 0) {
             this._edges.update(updates);
         }
     }
 
     /**
-     * Update node border styling based on agent state.
+     * Update node fill color based on agent state.
      * @param {string} nodeId - Node ID (agent ID)
-     * @param {string} state - Agent state: IN_SPEC or OUT_OF_SPEC
+     * @param {string} state - Agent state: IN_SPEC, OUT_OF_SPEC, or unknown/dead
      */
     updateNodeState(nodeId, state) {
         if (!this._nodes) return;
-        
-        let borderColor = '#999999';  // default grey
-        let borderWidth = 1;
-        
+        const existing = this._nodes.get(nodeId);
+        if (!existing) return;
+
+        let fillColor = 'grey';
         if (state === 'IN_SPEC') {
-            borderColor = '#32CD32';  // green
-            borderWidth = 3;
+            fillColor = '#32CD32';  // green
         } else if (state === 'OUT_OF_SPEC') {
-            borderColor = '#FF0000';  // red
-            borderWidth = 3;
+            fillColor = '#FF0000';  // red
         }
-        
-        // Update node border properties, preserving background color
+
+        // Preserve active hover border if the node is currently highlighted
+        const isHovered = (existing.borderWidth || 1) > 1;
+        const borderColor = isHovered && existing.color && existing.color.border
+            ? existing.color.border
+            : '#666666';
+
         this._nodes.update({
             id: nodeId,
             color: {
+                background: fillColor,
                 border: borderColor,
-                borderWidth: borderWidth
+                highlight: {
+                    background: fillColor,
+                    border: borderColor
+                }
             }
         });
     }

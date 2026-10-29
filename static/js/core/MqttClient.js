@@ -39,8 +39,14 @@ export class MqttClient {
      */
     constructor(eventBus, broker, port, options = {}) {
         this._eventBus = eventBus;
-        this._broker = broker;
-        this._port = port;
+        if (!broker || broker === '127.0.0.1' || broker === '0.0.0.0' || broker === 'localhost') {
+            this._broker = (typeof window !== 'undefined' && window.location && window.location.hostname)
+                ? window.location.hostname
+                : (broker || '127.0.0.1');
+        } else {
+            this._broker = broker;
+        }
+        this._port = Number(port) || 8080;
         this._topic = options.topic || '#';
         this._reconnectDelay = options.reconnectDelay || 3000;
         this._isKnownRequestType = options.isKnownRequestType || (() => false);
@@ -107,11 +113,13 @@ export class MqttClient {
             this._eventBus.emit('mqtt:agent:state', { rid: data.rid, value: data.value, raw: data });
         }
         else if (data.eventType === 'linkStateUpdate') {
+            const val = data.value || {};
             this._eventBus.emit('mqtt:link:stateUpdate', {
-                src_cid: data.value.src_cid,
-                dst_cid: data.value.dst_cid,
-                channel_id: data.value.channel_id,
-                state: data.value.state,
+                src_cid: val.src_cid,
+                dst_cid: val.dst_cid,
+                channel_id: val.channel_id,
+                state: val.state,
+                value: val,
                 raw: data
             });
         }

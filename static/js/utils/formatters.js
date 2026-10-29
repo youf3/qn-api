@@ -197,7 +197,7 @@ export function stateToColorClass(state) {
 export function stateToIconColor(state) {
     if (state) {
         return state.value === "IN_SPEC" ? "#32CD32" :
-            (state.value === "OUT_OF_SPEC" ? "red" : "grey");
+            (state.value === "OUT_OF_SPEC" ? "#FF0000" : "grey");
     }
     return "grey";
 }

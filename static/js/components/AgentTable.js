@@ -1,3 +1,5 @@
+import { stateToIconColor } from '../utils/formatters.js';
+
 /**
  * AgentTable — Encapsulates agent table rendering, heartbeat tracking,
  * status icon updates, and vis.js topology highlighting.
@@ -25,6 +27,7 @@ export class AgentTable {
         this._tableBodyId = tableBodyId;
         this._onOpenModal = options.onOpenModal || null;
         this._getTopoNodes = options.getTopoNodes || null;
+        this._onStateChange = options.onStateChange || null;
         this._originalNodeProperties = {};
     }
 
@@ -47,7 +50,7 @@ export class AgentTable {
                 <td class="last-seen" data-id="${k}">${nodes[k].lastSeen}</td>
                 <td class="agent-state" data-id="${k}">${nodes[k].state}</td>
                 <td class="text-center">
-                    <div class="d-flex justify-content-center align-items-center"">
+                    <div class="d-flex justify-content-center align-items-center">
                         <span class="info-icon" style="cursor:pointer;">
                             ℹ️
                         </span>
@@ -97,22 +100,29 @@ export class AgentTable {
     updateLastSeenDisplay(nodes) {
         document.querySelectorAll('.last-seen').forEach(cell => {
             const agentID = cell.getAttribute('data-id');
-            if (nodes[agentID]) {
-                cell.textContent = nodes[agentID].lastSeen;
-            }
-            if (nodes[agentID] && nodes[agentID].lastSeen === 'never') {
+            if (!nodes[agentID]) return;
+            cell.textContent = nodes[agentID].lastSeen;
+
+            if (nodes[agentID].lastSeen === 'never') {
                 this.updateStatusIcon(nodes, agentID, 'orange');
             } else if (nodes[agentID].lastSeen > 20) {
                 if (nodes[agentID].state !== 'dead') {
                     nodes[agentID].lastState = nodes[agentID].state;
+                    nodes[agentID].state = 'dead';
+                    if (this._onStateChange) {
+                        this._onStateChange(agentID, 'dead');
+                    }
                 }
-                nodes[agentID].state = 'dead';
                 this.updateStatusIcon(nodes, agentID, 'red');
             } else {
                 if (nodes[agentID].state === 'dead') {
                     nodes[agentID].state = nodes[agentID].lastState;
+                    if (this._onStateChange) {
+                        this._onStateChange(agentID, nodes[agentID].state);
+                    }
                 }
-                this.updateStatusIcon(nodes, agentID, '#32CD32');
+                const iconColor = stateToIconColor({ value: nodes[agentID].state });
+                this.updateStatusIcon(nodes, agentID, iconColor);
             }
         });
     }
@@ -147,29 +157,53 @@ export class AgentTable {
         if (highlight) {
             topoNodes.forEach(node => {
                 if (node.id === nodeID) {
-                    // Save original properties before highlighting
+                    const bgColor = node.color
+                        ? (typeof node.color === 'string' ? node.color : (node.color.background || 'grey'))
+                        : 'grey';
+                    const origBorder = (node.color && typeof node.color === 'object' && node.color.border)
+                        ? node.color.border
+                        : '#666666';
+                    // Save original border/size properties before highlighting
                     this._originalNodeProperties[node.id] = {
-                        color: node.color,
-                        borderWidth: node.borderWidth,
-                        size: node.size
+                        borderColor: origBorder,
+                        borderWidth: node.borderWidth || 1,
+                        size: node.size || 25
                     };
                     updateNodes.push({
                         id: node.id,
                         borderWidth: 4,
                         color: {
+                            background: bgColor,
                             border: '#FF0000',
-                            highlight: { border: '#FF0000' }
+                            highlight: {
+                                background: bgColor,
+                                border: '#FF0000'
+                            }
                         },
                         size: (node.size || 25) * 1.3
                     });
                 }
             });
         } else {
-            // Restore original properties
-            if (this._originalNodeProperties[nodeID]) {
+            // Restore original border/size while preserving current state background color
+            const saved = this._originalNodeProperties[nodeID];
+            const currentNode = topoNodes.get(nodeID);
+            if (saved && currentNode) {
+                const currentBg = currentNode.color
+                    ? (typeof currentNode.color === 'string' ? currentNode.color : (currentNode.color.background || 'grey'))
+                    : 'grey';
                 updateNodes.push({
                     id: nodeID,
-                    ...this._originalNodeProperties[nodeID]
+                    borderWidth: saved.borderWidth,
+                    size: saved.size,
+                    color: {
+                        background: currentBg,
+                        border: saved.borderColor,
+                        highlight: {
+                            background: currentBg,
+                            border: saved.borderColor
+                        }
+                    }
                 });
                 delete this._originalNodeProperties[nodeID];
             }

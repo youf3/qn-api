@@ -39,6 +39,7 @@ __CONFIGFILES = list()
 for i in ["QUANTNET_HOME", "VIRTUAL_ENV"]:
     if i in os.environ:
         __CONFIGFILES.append(f"{os.environ[i]}/etc/quantnet.cfg")
+        __CONFIGFILES.append(f"{os.environ[i]}/conf/quantnet.cfg")
 __CONFIGFILES.append("/opt/quantnet/etc/quantnet.cfg")
 
 __HAS_CONFIG = False
@@ -70,17 +71,17 @@ class Config:
         else:
             self.mq_broker_host = config_get("mq", "host", default="127.0.0.1")
         if mq_broker_port:
-            self.mq_broker_port = mq_broker_port
+            self.mq_broker_port = int(mq_broker_port)
         else:
-            self.mq_broker_port = config_get("mq", "port", default="1883")
+            self.mq_broker_port = int(config_get("mq", "port", default="1883"))
         if mq_mongo_host:
             self.mq_mongo_host = mq_mongo_host
         else:
             self.mq_mongo_host = config_get("mq", "mongo_host", default="127.0.0.1")
-        if mq_broker_port:
-            self.mq_mongo_port = mq_mongo_port
+        if mq_mongo_port:
+            self.mq_mongo_port = int(mq_mongo_port)
         else:
-            self.mq_mongo_port = config_get("mq", "mongo_port", default="27017")
+            self.mq_mongo_port = int(config_get("mq", "mongo_port", default="27017"))
         try:
             self.rpc_server_topic = config_get("mq", "rpc_server_topic")
         except Exception:
@@ -94,10 +95,18 @@ class Config:
         except Exception:
             self.path = None
         self.mq_ws_host = config_get("mq", "ws_host", default="127.0.0.1")
-        self.mq_ws_port = config_get("mq", "ws_port", default=8080)
+        self.mq_ws_port = int(config_get("mq", "ws_port", default=8080))
         self.request_types = config_get("main", "request_types", default=["spgRequest", "egpRequest", "bsmRequest"])
         try:
             self.schema_path = config_get("schemas", "path")
         except Exception:
             self.schema_path = None
 
+    def get(self, section, option, raise_exception=True, default=None, check_config_table=True):
+        return config_get(
+            section,
+            option,
+            raise_exception=raise_exception,
+            default=default,
+            check_config_table=check_config_table,
+        )

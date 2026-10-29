@@ -2,10 +2,12 @@
   "name": "quant-net-api",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "QuantNet API Dashboard",
   "scripts": {
     "build": "esbuild static/js/main.js --bundle --minify --sourcemap --outfile=static/js/dist/bundle.min.js --format=iife",
-    "watch": "esbuild static/js/main.js --bundle --sourcemap --outfile=static/js/dist/bundle.js --format=iife --watch"
+    "watch": "esbuild static/js/main.js --bundle --sourcemap --outfile=static/js/dist/bundle.js --format=iife --watch",
+    "test": "node --test tests/js/*.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"

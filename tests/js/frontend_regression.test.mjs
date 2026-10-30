@@ -6,6 +6,8 @@ import { MqttClient } from '../../static/js/core/MqttClient.js';
 import { TopologyGraph } from '../../static/js/components/TopologyGraph.js';
 import { AgentTable } from '../../static/js/components/AgentTable.js';
 import { ProbeTable } from '../../static/js/components/ProbeTable.js';
+import { DebugPanel } from '../../static/js/components/DebugPanel.js';
+import { CalibrationChart } from '../../static/js/components/charts/CalibrationChart.js';
 import { stateToIconColor } from '../../static/js/utils/formatters.js';
 
 /**
@@ -14,6 +16,7 @@ import { stateToIconColor } from '../../static/js/utils/formatters.js';
 class MockDataSet {
     constructor(items = []) {
         this._items = new Map();
+        this.updateCallCount = 0;
         items.forEach((item, idx) => {
             const id = item.id !== undefined ? item.id : `edge-${idx}`;
             this._items.set(id, { ...item, id });
@@ -32,6 +35,7 @@ class MockDataSet {
     }
 
     update(updates) {
+        this.updateCallCount += 1;
         const list = Array.isArray(updates) ? updates : [updates];
         list.forEach(u => {
             const prev = this._items.get(u.id) || {};
@@ -335,7 +339,8 @@ test('TopologyGraph and AgentTable coordinate node fill and border colors accura
     assert.equal(nodesMap['QPU-1'].lastSeen, 21);
     assert.equal(nodesMap['QPU-1'].state, 'dead');
     node = graph.getNodes().get('QPU-1');
-    assert.equal(node.color.background, 'grey');
+    assert.equal(node.color.background, '#FF0000');
+    assert.equal(iconEl.style.backgroundColor, '#FF0000');
 
     // Heartbeat arrives -> lastSeen reset to 0 -> restores IN_SPEC and #32CD32
     nodesMap['QPU-1'].lastSeen = 0;
@@ -343,6 +348,46 @@ test('TopologyGraph and AgentTable coordinate node fill and border colors accura
     assert.equal(nodesMap['QPU-1'].state, 'IN_SPEC');
     node = graph.getNodes().get('QPU-1');
     assert.equal(node.color.background, '#32CD32');
+    assert.equal(iconEl.style.backgroundColor, '#32CD32');
+
+    // Passing stateToIconColor function directly (as app.js does on mqtt:agent:state)
+    // must resolve nodes[rid].state rather than passing the raw node wrapper
+    agentTable.updateStatusIcon(nodesMap, 'QPU-1', stateToIconColor);
+    assert.equal(iconEl.style.backgroundColor, '#32CD32');
+    node = graph.getNodes().get('QPU-1');
+    assert.equal(node.color.background, '#32CD32');
+});
+
+test('TopologyGraph strips group property and ProbeTable highlight preserves IN_SPEC node color', () => {
+    setupMockDom({ 'topo-canvas': null, 'probe-tbody': null });
+
+    const graph = new TopologyGraph('topo-canvas');
+    graph.draw({
+        nodes: [
+            { id: 'QPU-1', label: 'QPU-1', group: 1, color: 'grey' },
+            { id: 'BSM-1_2', label: 'BSM-1_2', group: 2, color: 'grey' }
+        ],
+        edges: []
+    });
+
+    // `group` must be stripped so vis-network never applies Group 1 blue (#97C2FC)
+    assert.equal(graph.getNodes().get('QPU-1').group, undefined);
+    assert.equal(graph.getNodes().get('BSM-1_2').group, undefined);
+
+    graph.updateNodeState('QPU-1', 'IN_SPEC');
+    graph.updateNodeState('BSM-1_2', 'IN_SPEC');
+    assert.equal(graph.getNodes().get('QPU-1').color.background, '#32CD32');
+
+    const probeTable = new ProbeTable('probe-tbody', {
+        getTopoNodes: () => graph.getNodes()
+    });
+    probeTable._highlightTopology('QPU-1', 'BSM-1_2', true);
+    assert.equal(graph.getNodes().get('QPU-1').size, 35);
+    assert.equal(graph.getNodes().get('QPU-1').color.background, '#32CD32');
+
+    probeTable._highlightTopology('QPU-1', 'BSM-1_2', false);
+    assert.equal(graph.getNodes().get('QPU-1').size, 25);
+    assert.equal(graph.getNodes().get('QPU-1').color.background, '#32CD32');
 });
 
 test('ProbeTable displays ToF (and never RTT) for quantum links, and RTT for classical links', () => {
@@ -442,4 +487,113 @@ test('ProbeTable displays ToF (and never RTT) for quantum links, and RTT for cla
     assert.match(allStreamHtml, /42\.15 ms/);
     assert.doesNotMatch(allStreamHtml, /999\.99/);
 });
+
+test('Long-running dashboard stability: skips redundant DataSet updates, prevents probe_history re-ingestion, and bounds memory', () => {
+    const { registry } = setupMockDom({
+        'topo-container': null,
+        'probe-tbody': null,
+        'probe-summary-badges': null,
+        'probe-history-table-body': null,
+        'probe-stream-counter': null,
+        'debug-panel': null
+    });
+
+    // 1. TopologyGraph skips DataSet.update() when visual state/color has not changed
+    const bus = new EventBus();
+    const graph = new TopologyGraph('topo-container', bus);
+    graph.draw({
+        nodes: [{ id: 'QPU-1', label: 'QPU-1', color: 'grey' }],
+        edges: [{
+            id: 'e-quantum',
+            from: 'QPU-1',
+            to: 'BSM-1',
+            channel_type: 'quantum',
+            base_color: 'blue',
+            color: '#cccccc',
+            width: 1,
+            dashes: [2, 4]
+        }]
+    });
+
+    graph.updateNodeState('QPU-1', 'IN_SPEC');
+    assert.equal(graph.getNodes().updateCallCount, 1);
+    // Repeated identical state updates must NOT trigger vis.DataSet.update
+    graph.updateNodeState('QPU-1', 'IN_SPEC');
+    graph.updateNodeState('QPU-1', 'IN_SPEC');
+    assert.equal(graph.getNodes().updateCallCount, 1);
+
+    graph.updateLinkState('QPU-1', 'BSM-1', 'QUANTUM_UP', {
+        is_quantum: true,
+        probe_tx_count: 1,
+        last_probe_info: { tof: 0.01, vlink: 'QPU-1:2->BSM-1:1' }
+    });
+    assert.equal(graph.getEdges().updateCallCount, 1);
+
+    // Subsequent periodic probes in the same QUANTUM_UP state update tooltip in-place without calling DataSet.update
+    graph.updateLinkState('QPU-1', 'BSM-1', 'QUANTUM_UP', {
+        is_quantum: true,
+        probe_tx_count: 2,
+        last_probe_info: { tof: 0.012, vlink: 'QPU-1:2->BSM-1:1' }
+    });
+    assert.equal(graph.getEdges().updateCallCount, 1);
+    assert.match(graph.getEdges().get('e-quantum').title, /Probes: 2/);
+
+    // 2. ProbeTable does not re-ingest evicted probe_history entries once >40 events have been seen
+    const probeTable = new ProbeTable('probe-tbody');
+    const history50 = Array.from({ length: 50 }, (_, idx) => ({
+        ts: new Date((1700000000 + idx) * 1000).toISOString(),
+        seq: idx + 1,
+        probe_id: `probe-${idx + 1}`,
+        tof: 0.01,
+        counts: 1,
+        status: 'ok',
+        state: 'QUANTUM_UP'
+    }));
+    const payload = [{
+        src_cid: 'QPU-1',
+        dst_cid: 'BSM-1',
+        channel_id: '2',
+        is_quantum: true,
+        state: 'QUANTUM_UP',
+        probe_tx_count: 50,
+        last_probe_id: 'probe-50',
+        probe_history: history50
+    }];
+    probeTable.loadFromServer(payload, { isPoll: false });
+    assert.equal(probeTable._probeEvents.size, 40);
+
+    // Polling again with the exact same 50-entry history must detect 0 new events and NOT re-render
+    let renderCount = 0;
+    const origRender = probeTable.render.bind(probeTable);
+    probeTable.render = (...args) => { renderCount += 1; return origRender(...args); };
+    probeTable.loadFromServer(payload, { isPoll: true });
+    assert.equal(renderCount, 0);
+
+    // 3. DebugPanel bounds messages and truncates oversized payloads
+    const debug = new DebugPanel('debug-panel', { maxMessages: 5, maxMessageLength: 20 });
+    for (let i = 0; i < 10; i++) {
+        debug.addMessage(`msg-${i}-abcdefghijklmnopqrstuvwxyz`);
+    }
+    assert.equal(debug._messages.length, 5);
+    assert.ok(debug._messages.every(m => m.length <= 23));
+    assert.match(registry['debug-panel'].value, /msg-9/);
+
+    // 4. CalibrationChart initializes missing agent data and caps resultHistory at 50
+    const agentCalibrationData = {};
+    const calibChart = new CalibrationChart({ agentCalibrationData, chartCache: {} });
+    for (let i = 0; i < 65; i++) {
+        calibChart.handleTaskResult({
+            rid: 'QPU-1',
+            value: {
+                name: 'Rabi Frequency',
+                result: { idx: i },
+                created_at: 1700000000 + i
+            }
+        });
+    }
+    const hist = agentCalibrationData['QPU-1'].resultHistory.get('QPU-1-RabiFrequency');
+    assert.equal(hist.length, 50);
+    assert.deepEqual(hist[0].result, { idx: 64 });
+});
+
 

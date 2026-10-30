@@ -252,6 +252,9 @@ export class AgentModal {
         setTimeout(() => {
             const ctx = document.getElementById(canvasId)?.getContext('2d');
             if (ctx) {
+                if (this._chartCache[canvasId] && typeof this._chartCache[canvasId].destroy === 'function') {
+                    this._chartCache[canvasId].destroy();
+                }
                 this._chartCache[canvasId] = new Chart(ctx, {
                     type: 'scatter',
                     data: {

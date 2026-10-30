@@ -192,8 +192,9 @@ export class App {
         this.agentTable.render(this.nodes);
         this.probeTable.loadFromServer(this.initialLinkStates);
         // Fetch fresh link_states from API on load and poll periodically as fallback
+        this._isPollingLinks = false;
         this._pollLinkStates(false);
-        setInterval(() => this._pollLinkStates(true), 2500);
+        setInterval(() => this._pollLinkStates(true), 5000);
         this.experimentTable.render(
             this.experimentStore.getExperiments(),
             this.expSortDescending
@@ -213,6 +214,9 @@ export class App {
 
     /** @private */
     _pollLinkStates(isPoll = true) {
+        if (this._isPollingLinks) return;
+        if (isPoll && typeof document !== 'undefined' && document.hidden) return;
+        this._isPollingLinks = true;
         fetch('/api/link_states')
             .then(r => r.ok ? r.json() : null)
             .then(list => {
@@ -220,7 +224,10 @@ export class App {
                     this.probeTable.loadFromServer(list, { isPoll });
                 }
             })
-            .catch(() => {});
+            .catch(() => {})
+            .finally(() => {
+                this._isPollingLinks = false;
+            });
     }
 
     /** @private */
@@ -253,7 +260,13 @@ export class App {
         eb.on('mqtt:link:stateUpdate', (payload) => {
             this.probeTable.handleUpdate(payload);
             if (payload && payload.raw) {
-                this.debugPanel.addMessage(JSON.stringify(payload.raw));
+                const rawVal = payload.raw.value;
+                if (rawVal && typeof rawVal === 'object' && 'probe_history' in rawVal) {
+                    const { probe_history, ...restVal } = rawVal;
+                    this.debugPanel.addMessage(JSON.stringify({ ...payload.raw, value: restVal }));
+                } else {
+                    this.debugPanel.addMessage(JSON.stringify(payload.raw));
+                }
             }
         });
 

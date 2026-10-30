@@ -155,6 +155,7 @@ async def _get_topology():
     g = net.Network(directed=True, cdn_resources='in_line')
     g.from_nx(nxg)
     for node in g.nodes:
+        node.pop('group', None)
         node['physics'] = True
         node['color'] = 'grey'
         node.update(node_style_map.get(node.get('type'), {}))

@@ -67,14 +67,17 @@ export class AgentTable {
             }
 
             // Add hover event listeners for vis.js topology highlighting
-            row.addEventListener('mouseover', () => {
+            row.addEventListener('mouseenter', () => {
                 this.highlightNode(k, true);
             });
-            row.addEventListener('mouseout', () => {
+            row.addEventListener('mouseleave', () => {
                 this.highlightNode(k, false);
             });
 
             tableBody.appendChild(row);
+            if (this._onStateChange) {
+                this._onStateChange(k, nodes[k].iconColor || nodes[k].state);
+            }
         });
     }
 
@@ -104,22 +107,20 @@ export class AgentTable {
             cell.textContent = nodes[agentID].lastSeen;
 
             if (nodes[agentID].lastSeen === 'never') {
-                this.updateStatusIcon(nodes, agentID, 'orange');
+                const st = nodes[agentID].state;
+                const iconColor = (st === 'IN_SPEC' || st === 'OUT_OF_SPEC')
+                    ? stateToIconColor({ value: st })
+                    : 'orange';
+                this.updateStatusIcon(nodes, agentID, iconColor);
             } else if (nodes[agentID].lastSeen > 20) {
                 if (nodes[agentID].state !== 'dead') {
                     nodes[agentID].lastState = nodes[agentID].state;
                     nodes[agentID].state = 'dead';
-                    if (this._onStateChange) {
-                        this._onStateChange(agentID, 'dead');
-                    }
                 }
-                this.updateStatusIcon(nodes, agentID, 'red');
+                this.updateStatusIcon(nodes, agentID, '#FF0000');
             } else {
                 if (nodes[agentID].state === 'dead') {
                     nodes[agentID].state = nodes[agentID].lastState;
-                    if (this._onStateChange) {
-                        this._onStateChange(agentID, nodes[agentID].state);
-                    }
                 }
                 const iconColor = stateToIconColor({ value: nodes[agentID].state });
                 this.updateStatusIcon(nodes, agentID, iconColor);
@@ -136,11 +137,20 @@ export class AgentTable {
     updateStatusIcon(nodes, agentID, color) {
         const icon = document.querySelector(`.status-icon[data-id="${agentID}"]`);
         const scell = document.querySelector(`.agent-state[data-id="${agentID}"]`);
-        if (icon) {
-            icon.style.backgroundColor = typeof color === 'function' ? color(nodes[agentID]) : color;
+        const resolvedColor = typeof color === 'function'
+            ? color({ value: nodes[agentID]?.state })
+            : color;
+        if (nodes[agentID]) {
+            nodes[agentID].iconColor = resolvedColor;
         }
-        if (scell) {
+        if (icon) {
+            icon.style.backgroundColor = resolvedColor;
+        }
+        if (scell && nodes[agentID]) {
             scell.textContent = nodes[agentID].state;
+        }
+        if (this._onStateChange) {
+            this._onStateChange(agentID, resolvedColor);
         }
     }
 
@@ -163,12 +173,15 @@ export class AgentTable {
                     const origBorder = (node.color && typeof node.color === 'object' && node.color.border)
                         ? node.color.border
                         : '#666666';
-                    // Save original border/size properties before highlighting
-                    this._originalNodeProperties[node.id] = {
-                        borderColor: origBorder,
-                        borderWidth: node.borderWidth || 1,
-                        size: node.size || 25
-                    };
+                    // Save original border/size properties before highlighting (if not already saved)
+                    if (!this._originalNodeProperties[node.id]) {
+                        this._originalNodeProperties[node.id] = {
+                            borderColor: origBorder,
+                            borderWidth: node.borderWidth || 1,
+                            size: node.size || 25
+                        };
+                    }
+                    const baseSize = this._originalNodeProperties[node.id].size;
                     updateNodes.push({
                         id: node.id,
                         borderWidth: 4,
@@ -178,9 +191,13 @@ export class AgentTable {
                             highlight: {
                                 background: bgColor,
                                 border: '#FF0000'
+                            },
+                            hover: {
+                                background: bgColor,
+                                border: '#FF0000'
                             }
                         },
-                        size: (node.size || 25) * 1.3
+                        size: baseSize * 1.3
                     });
                 }
             });
@@ -200,6 +217,10 @@ export class AgentTable {
                         background: currentBg,
                         border: saved.borderColor,
                         highlight: {
+                            background: currentBg,
+                            border: saved.borderColor
+                        },
+                        hover: {
                             background: currentBg,
                             border: saved.borderColor
                         }

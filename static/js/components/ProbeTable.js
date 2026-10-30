@@ -28,7 +28,12 @@ export class ProbeTable {
         this._links = new Map();
         /** @type {Map<string, Object>} keyed by unique probe event key */
         this._probeEvents = new Map();
+        /** @type {Set<string>} bounded set of seen probe keys so evicted history is never re-ingested */
+        this._seenProbeKeys = new Set();
+        this._maxSeenKeys = 2000;
         this._maxEvents = 40;
+        this._renderPending = false;
+        this._pendingHighlightKey = null;
     }
 
     /**
@@ -48,8 +53,8 @@ export class ProbeTable {
             const key = this._makeKey(ls);
             if (!key) return;
             const prev = this._links.get(key);
-            const changed = !prev ||
-                prev.state !== ls.state ||
+            const stateChanged = !prev || prev.state !== ls.state;
+            const changed = stateChanged ||
                 prev.probe_tx_count !== ls.probe_tx_count ||
                 prev.probe_rx_count !== ls.probe_rx_count ||
                 prev.last_probe_id !== ls.last_probe_id ||
@@ -82,7 +87,7 @@ export class ProbeTable {
             const newEventsAdded = this._ingestProbeEvents(ls, !firstLoad && isPoll);
             if (changed || newEventsAdded) {
                 anyChanged = true;
-                if (justUpdated && this._onLinkUpdated) {
+                if (stateChanged && this._onLinkUpdated) {
                     this._onLinkUpdated(ls);
                 }
             }
@@ -115,7 +120,33 @@ export class ProbeTable {
         };
         this._links.set(key, merged);
         this._ingestProbeEvents(merged, true);
-        this.render(key);
+        this._scheduleRender(key);
+    }
+
+    /**
+     * Coalesce rapid MQTT updates into at most one DOM render per animation frame.
+     * Falls back to synchronous render when requestAnimationFrame is unavailable (e.g. unit tests).
+     * @param {string} [highlightKey]
+     */
+    _scheduleRender(highlightKey = null) {
+        if (highlightKey) {
+            this._pendingHighlightKey = highlightKey;
+        }
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+            if (!this._renderPending) {
+                this._renderPending = true;
+                window.requestAnimationFrame(() => {
+                    this._renderPending = false;
+                    const key = this._pendingHighlightKey;
+                    this._pendingHighlightKey = null;
+                    this.render(key);
+                });
+            }
+        } else {
+            const key = this._pendingHighlightKey;
+            this._pendingHighlightKey = null;
+            this.render(key);
+        }
     }
 
     /**
@@ -246,7 +277,12 @@ export class ProbeTable {
             const evKey = probeId
                 ? `${ls.src_cid}|${ls.channel_id}|${probeId}`
                 : `${ls.src_cid}|${ls.channel_id}|${seq}|${tsIso}`;
-            if (this._probeEvents.has(evKey)) return;
+            if (this._seenProbeKeys.has(evKey) || this._probeEvents.has(evKey)) return;
+            this._seenProbeKeys.add(evKey);
+            if (this._seenProbeKeys.size > this._maxSeenKeys) {
+                const oldestKey = this._seenProbeKeys.keys().next().value;
+                this._seenProbeKeys.delete(oldestKey);
+            }
 
             const tsSec = this._parseTimestampSec(tsIso) || (Date.now() / 1000);
             this._probeEvents.set(evKey, {
@@ -465,7 +501,8 @@ export class ProbeTable {
             if (n) {
                 nodes.update({
                     id,
-                    size: highlight ? 35 : 25
+                    size: highlight ? 35 : 25,
+                    ...(n.color ? { color: n.color } : {})
                 });
             }
         });

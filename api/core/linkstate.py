@@ -12,6 +12,7 @@ from quantnet_controller.db.nosql.collection.async_collection import (
 from common.config import Config
 
 logger = logging.getLogger(__name__)
+_CONFIG = None
 
 
 async def get_link_states() -> list:
@@ -22,11 +23,13 @@ async def get_link_states() -> list:
     state, timestamp. If collection is empty or unreachable,
     returns empty list.
     """
+    global _CONFIG
     try:
-        # Initialize async broker config if not already done
-        config = Config()
-        init_async_broker_config(config)
-        init_async_collection_config(config)
+        # Initialize async broker config once if not already done
+        if _CONFIG is None:
+            _CONFIG = Config()
+            init_async_broker_config(_CONFIG)
+            init_async_collection_config(_CONFIG)
 
         # Get the link state collection handler
         db = AsyncAbstractDatabase()

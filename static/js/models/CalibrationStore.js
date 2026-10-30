@@ -161,6 +161,16 @@ export class CalibrationStore {
             this._agentData[agentId].resultIndex = new Map();
             this._agentData[agentId].totalTasks = 0;
         }
+        const prefix = `chart-${agentId}-`;
+        Object.keys(this._chartCache).forEach(key => {
+            if (key.startsWith(prefix)) {
+                const chart = this._chartCache[key];
+                if (chart && typeof chart.destroy === 'function') {
+                    chart.destroy();
+                }
+                delete this._chartCache[key];
+            }
+        });
     }
 
     /* ------------------------------------------------------------------ */

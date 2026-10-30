@@ -1,3 +1,5 @@
+import { CalibrationStore } from '../../models/CalibrationStore.js';
+
 /**
  * CalibrationChart — Handles real-time calibration task results and
  * populates per-task scatter charts inside the Agent Details modal.
@@ -43,7 +45,6 @@ export class CalibrationChart {
 
         // Save most recent result (used by chart rendering)
         agentData.results.set(taskId, value.result);
-        console.log(taskId, value.result);
 
         // Prepend to resultHistory for pager support (newest first)
         if (!agentData.resultHistory.has(taskId)) {
@@ -56,6 +57,9 @@ export class CalibrationChart {
                 result: value.result,
                 created_at: value.created_at || (Date.now() / 1000)
             });
+            if (history.length > 50) {
+                history.length = 50;
+            }
             agentData.resultIndex.set(taskId, 0);
             if (this._agentModal) {
                 this._agentModal._updatePagerUI(rid, taskId);

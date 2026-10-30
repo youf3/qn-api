@@ -49,7 +49,10 @@ export class TopologyGraph {
 
         console.log('Embedded Data:', topo);
 
-        this._nodes = new vis.DataSet(topo.nodes || []);
+        // Strip `group` from nodes so vis-network's group palette (default Group 1 blue #97C2FC)
+        // never overrides the agent state fill color during partial DataSet updates.
+        const sanitizedNodes = (topo.nodes || []).map(({ group, ...node }) => node);
+        this._nodes = new vis.DataSet(sanitizedNodes);
         this._edges = new vis.DataSet(topo.edges || []);
 
         this._network = new vis.Network(
@@ -57,6 +60,15 @@ export class TopologyGraph {
             { nodes: this._nodes, edges: this._edges },
             this._networkOptions
         );
+
+        // Stop continuous physics simulation once initial layout stabilizes
+        if (typeof this._network.on === 'function') {
+            this._network.on('stabilizationIterationsDone', () => {
+                if (typeof this._network.stopSimulation === 'function') {
+                    this._network.stopSimulation();
+                }
+            });
+        }
 
         // Double-click opens agent modal
         if (this._onDoubleClick) {
@@ -161,7 +173,25 @@ export class TopologyGraph {
                 } else {
                     update.title = `${channelType} (${state})`;
                 }
-                updates.push(update);
+
+                const dashesEqual = JSON.stringify(edge.dashes ?? false) === JSON.stringify(update.dashes ?? false);
+                const styleChanged = (
+                    edge.width !== update.width ||
+                    edge.opacity !== update.opacity ||
+                    edge.color !== update.color ||
+                    !dashesEqual
+                );
+
+                if (styleChanged) {
+                    updates.push(update);
+                } else if (edge.title !== update.title) {
+                    // Update tooltip text in-place without waking up vis.js physics engine
+                    edge.title = update.title;
+                    const netEdge = this._network?.body?.edges?.[edge.id];
+                    if (netEdge && netEdge.options) {
+                        netEdge.options.title = update.title;
+                    }
+                }
             }
         });
 
@@ -171,9 +201,10 @@ export class TopologyGraph {
     }
 
     /**
-     * Update node fill color based on agent state.
+     * Update node fill color based on agent state or status icon color.
+     * Matches AgentTable's status icon colors 1-to-1.
      * @param {string} nodeId - Node ID (agent ID)
-     * @param {string} state - Agent state: IN_SPEC, OUT_OF_SPEC, or unknown/dead
+     * @param {string} state - Agent state (IN_SPEC, OUT_OF_SPEC, dead, never) or CSS color string
      */
     updateNodeState(nodeId, state) {
         if (!this._nodes) return;
@@ -181,10 +212,17 @@ export class TopologyGraph {
         if (!existing) return;
 
         let fillColor = 'grey';
-        if (state === 'IN_SPEC') {
+        if (state === 'IN_SPEC' || state === '#32CD32') {
             fillColor = '#32CD32';  // green
-        } else if (state === 'OUT_OF_SPEC') {
+        } else if (
+            state === 'OUT_OF_SPEC' ||
+            state === 'dead' ||
+            state === '#FF0000' ||
+            state === 'red'
+        ) {
             fillColor = '#FF0000';  // red
+        } else if (state === 'never' || state === 'orange') {
+            fillColor = 'orange';
         }
 
         // Preserve active hover border if the node is currently highlighted
@@ -193,12 +231,31 @@ export class TopologyGraph {
             ? existing.color.border
             : '#666666';
 
+        // Also check vis-network's internal rendered node background in case a partial
+        // update ever caused vis-network's internal options to diverge from DataSet.
+        const netNodeBg = this._network?.body?.nodes?.[nodeId]?.options?.color?.background;
+
+        // Skip redundant DataSet updates if node colors are already identical
+        if (
+            existing.color &&
+            typeof existing.color === 'object' &&
+            existing.color.background === fillColor &&
+            existing.color.border === borderColor &&
+            (!netNodeBg || netNodeBg === fillColor)
+        ) {
+            return;
+        }
+
         this._nodes.update({
             id: nodeId,
             color: {
                 background: fillColor,
                 border: borderColor,
                 highlight: {
+                    background: fillColor,
+                    border: borderColor
+                },
+                hover: {
                     background: fillColor,
                     border: borderColor
                 }
